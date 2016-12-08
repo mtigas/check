@@ -101,8 +101,9 @@ type IPResp struct {
 }
 
 func APIHandler(Exits *Exits) http.HandlerFunc {
+	checkJsonpCallback := regexp.MustCompile("^[[:word:]-$_]+$")
+
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		var (
 			err   error
 			isTor bool
@@ -112,7 +113,26 @@ func APIHandler(Exits *Exits) http.HandlerFunc {
 			_, isTor = Exits.IsTor(host)
 		}
 		ip, _ := json.Marshal(IPResp{isTor, host})
-		w.Write(ip)
+
+		isJsonp := false
+
+		// Check if we have set a jsonp `callback`. If so, switch to
+		// a jsonp output mode so that this API endpoint can be called
+		// by browser clients on other domains. we restrict it to
+		// alphanumeric + "$" + "-" + "_" for safety reasons.
+		callback := r.URL.Query().Get("callback")
+		if checkJsonpCallback.MatchString(callback) {
+			isJsonp = true
+		}
+
+		if isJsonp {
+			w.Header().Set("Content-Type", "application/javascript")
+			out := []byte(fmt.Sprintf("%s(%s);", callback, ip))
+			w.Write(out)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(ip)
+		}
 	}
 }
 
